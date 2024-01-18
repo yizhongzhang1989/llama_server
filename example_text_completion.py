@@ -6,9 +6,16 @@ import fire
 from llama import Llama
 from typing import List
 
+import os  
+os.environ['MASTER_ADDR'] = 'localhost'  
+os.environ['MASTER_PORT'] = '12355'  
+os.environ['RANK'] = '0'  
+os.environ['WORLD_SIZE'] = '1'  
+
+
 def main(
-    ckpt_dir: str,
-    tokenizer_path: str,
+    ckpt_dir: str = "llama-2-7b/",
+    tokenizer_path: str = "tokenizer.model",
     temperature: float = 0.6,
     top_p: float = 0.9,
     max_seq_len: int = 128,

@@ -13,8 +13,38 @@ os.environ['MASTER_PORT'] = '12355'
 os.environ['RANK'] = '0'  
 os.environ['WORLD_SIZE'] = '1'  
 
+import sys
 
-def main(
+
+# define a print function to print delta string
+def print_delta(delta_str, end_flag=False, params=None):
+    print(delta_str, end='')
+    if end_flag:
+        print('')
+    sys.stdout.flush()        
+
+
+def main():
+    ckpt_dir: str = "llama-2-7b-chat/",
+    tokenizer_path: str = "tokenizer.model",
+    temperature: float = 0.6,
+    top_p: float = 0.9,
+    max_seq_len: int = 512,
+    max_batch_size: int = 6,
+    max_gen_len: Optional[int] = None,
+
+    generator = Llama.build(
+        ckpt_dir=ckpt_dir,
+        tokenizer_path=tokenizer_path,
+        max_seq_len=max_seq_len,
+        max_batch_size=max_batch_size,
+    )
+
+
+
+
+
+def main_bak(
     ckpt_dir: str = "llama-2-7b-chat/",
     tokenizer_path: str = "tokenizer.model",
     temperature: float = 0.6,
@@ -57,7 +87,6 @@ def main(
             {"role": "user", "content": "Nice to meet you too, Kate."},
         ],
     ]
-
     results = generator.chat_completion(
         dialogs,  # type: ignore
         max_gen_len=max_gen_len,
