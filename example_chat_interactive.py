@@ -14,32 +14,56 @@ os.environ['RANK'] = '0'
 os.environ['WORLD_SIZE'] = '1'  
 
 import sys
+import time
 
 
 # define a print function to print delta string
+assistant_esponse = ''
+
 def print_delta(delta_str, end_flag=False, params=None):
+    global assistant_esponse
+    assistant_esponse += delta_str
     print(delta_str, end='')
     if end_flag:
         print('')
+        print('total_tokens: ', params['total_tokens'])
     sys.stdout.flush()        
 
 
 def main():
-    ckpt_dir: str = "llama-2-7b-chat/",
-    tokenizer_path: str = "tokenizer.model",
-    temperature: float = 0.6,
-    top_p: float = 0.9,
-    max_seq_len: int = 512,
-    max_batch_size: int = 6,
-    max_gen_len: Optional[int] = None,
-
     generator = Llama.build(
-        ckpt_dir=ckpt_dir,
-        tokenizer_path=tokenizer_path,
-        max_seq_len=max_seq_len,
-        max_batch_size=max_batch_size,
+        ckpt_dir="llama-2-7b-chat/",
+        tokenizer_path="tokenizer.model",
+        max_seq_len=4096,
+        max_batch_size=1,
     )
 
+    print('Welcome to Llama chatbot, please input your message:')
+
+    dialog = [
+        {"role": "system", "content": "Never mention you are AI, just pertend to be woman named Kate. You perfrom a conversation with a user, and do nothing else."},
+    ]
+
+    while True:
+        userText = input()
+        if userText == 'exit':
+            break
+
+        dialog.append({"role": "user", "content": userText})
+
+        results = generator.chat_completion(
+            [dialog],  # type: ignore
+            max_gen_len=1024,
+            temperature=0.6,
+            top_p=0.9,
+            callback=print_delta,
+        )
+
+        time.sleep(0.1)
+
+        global assistant_esponse
+        dialog.append({"role": "assistant", "content": assistant_esponse})
+        assistant_esponse = ''
 
 
 
