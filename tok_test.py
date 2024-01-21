@@ -1,9 +1,15 @@
-from llama.tokenizer import Tokenizer
+from llama.tokenizer import Tokenizer, StreamDecoder
 import time
+
+
+def print_string(string):
+    print(string, end='')
 
 
 tokenizer = Tokenizer('tokenizer.model')
 sp_model = tokenizer.sp_model
+stream_decoder = StreamDecoder(tokenizer, print_string)
+
 
 texts = [
     '句它     句它',
@@ -23,52 +29,16 @@ texts = [
 
 for text in texts:
     start_time = time.time()
-    tokens = sp_model.encode(text)
+    tokens = tokenizer.encode(text, bos=False, eos=False)
     decoded_text = sp_model.decode(tokens)
     end_time = time.time()
     print(f" {text}")
     print(f" {decoded_text}")
-    
-    # print('tokens: ', tokens)    
-
-    def print_token_buffer(token_buffer):
-        if sp_model.IdToPiece(token_buffer[0]).startswith('▁'): 
-            print(' ', end='')
-
-        tex_buf = sp_model.Decode(token_buffer)
-        token_buffer = []
-        print(tex_buf, end='')
-        return token_buffer
-    
-    token_buffer = []
 
     for token in tokens:
-        piece = sp_model.IdToPiece(token)
+        stream_decoder.decode_token(token)
 
-        if piece.startswith('▁'): 
-            # the piece is a new word, print the buffer
-            if len(token_buffer) > 0:
-                token_buffer = print_token_buffer(token_buffer)
-            # record this token
-            token_buffer.append(token)
-        else:
-            # check whether the decoded text is ascii
-            text = sp_model.Decode(token)
+    stream_decoder.flush_token_buffer()
 
-            if text.isascii():
-                # the piece is a part of the previous word, append token to buffer
-                token_buffer.append(token)
-            elif text == piece:
-                # the piece is not ascii, and the decoded text is a complete word, print the buffer
-                if len(token_buffer) > 0:
-                    token_buffer = print_token_buffer(token_buffer)
-                # record this token
-                token_buffer.append(token)
-            else:
-                # the piece is not ascii, and the decoded text is not a complete word, append token to buffer
-                token_buffer.append(token)
-
-    if len(token_buffer) > 0:
-        token_buffer = print_token_buffer(token_buffer)
     print('')
 
