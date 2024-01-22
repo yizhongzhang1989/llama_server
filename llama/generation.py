@@ -17,7 +17,7 @@ from fairscale.nn.model_parallel.initialize import (
 )
 
 from llama.model import ModelArgs, Transformer
-from llama.tokenizer import Tokenizer
+from llama.tokenizer import Tokenizer, StreamDecoder
 
 Role = Literal["system", "user", "assistant"]
 
@@ -130,8 +130,6 @@ class Llama:
         self.model = model
         self.tokenizer = tokenizer
 
-        self.gen_str_buf = ""
-
     @torch.inference_mode()
     def generate(
         self,
@@ -192,6 +190,8 @@ class Llama:
                 ignore_index=pad_id,
             )
 
+        stream_decoder = StreamDecoder(self.tokenizer)
+
         for cur_pos in range(min_prompt_len, total_len):
             logits = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos)
             if temperature > 0:
@@ -204,23 +204,12 @@ class Llama:
 
             # convert token to string (do not support batch size > 1)
             token = next_token.item()
-            if not self.tokenizer.sp_model.IsControl(token):                    
-                piece = self.tokenizer.sp_model.IdToPiece(token)
-                if piece.startswith("▁"):
-                    if min_prompt_len == cur_pos:
-                        # remove the first character
-                        piece = piece[1:]
-                    else:
-                        piece = " " + piece[1:]
-
-                        # a separate word is in the buffer, call the callback
-                        if callback is not None:
-                            callback(delta_str=self.gen_str_buf, 
-                                    end_flag=False, 
-                                    params={"generated_tokens": cur_pos-min_prompt_len+1, 'total_tokens': cur_pos+1})
-                            self.gen_str_buf = ""
-
-                self.gen_str_buf += piece
+            stream_decoder.decode_token(token)
+            if stream_decoder.string_buffer != '' and callback is not None:
+                callback(delta_str=stream_decoder.string_buffer, 
+                        end_flag=False, 
+                        params={"generated_tokens": cur_pos-min_prompt_len+1, 'total_tokens': cur_pos+1})
+                stream_decoder.string_buffer = ''
 
             # only replace token if prompt has already been generated
             next_token = torch.where(
@@ -241,11 +230,12 @@ class Llama:
             if all(eos_reached):
                 break
 
+        stream_decoder.flush_token_buffer()
         if callback is not None:
-            callback(delta_str=self.gen_str_buf, 
+            callback(delta_str=stream_decoder.string_buffer, 
                     end_flag=True, 
-                    params={"generated_tokens": prev_pos-min_prompt_len+1, 'total_tokens': prev_pos+1})
-            self.gen_str_buf = ""
+                    params={"generated_tokens": cur_pos-min_prompt_len+1, 'total_tokens': cur_pos+1})
+            stream_decoder.string_buffer = ''
 
 
         if logprobs:
