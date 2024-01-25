@@ -327,6 +327,7 @@ class Llama:
             max_gen_len (Optional[int], optional): Maximum length of the generated response sequence.
                 If not provided, it's set to the model's maximum sequence length minus 1.
             logprobs (bool, optional): Flag indicating whether to compute token log probabilities. Defaults to False.
+            callback (Optional[callable], optional): Callback function to be called after each word is generated. Defaults to None.
 
         Returns:
             List[ChatPrediction]: List of chat predictions, each containing the assistant's generated response.
@@ -396,7 +397,8 @@ class Llama:
             top_p=top_p,
             logprobs=logprobs,
             echo=False,
-            callback=self.new_word_callback if callback is None else callback,
+            callback=callback,
+            # callback=self.new_word_callback if callback is None else callback,            
         )
         if logprobs:
             return [
