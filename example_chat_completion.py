@@ -7,11 +7,11 @@ import fire
 
 from llama import Llama, Dialog
 
-import os  
-os.environ['MASTER_ADDR'] = 'localhost'  
-os.environ['MASTER_PORT'] = '12355'  
-os.environ['RANK'] = '0'  
-os.environ['WORLD_SIZE'] = '1'  
+# import os  
+# os.environ['MASTER_ADDR'] = 'localhost'  
+# os.environ['MASTER_PORT'] = '12355'  
+# os.environ['RANK'] = '0'  
+# os.environ['WORLD_SIZE'] = '1'  
 
 
 def main(
@@ -38,6 +38,16 @@ def main(
         max_gen_len (int, optional): The maximum length of generated sequences. If None, it will be
             set to the model's max sequence length. Defaults to None.
     """
+
+
+    import os
+    print("MASTER_ADDR:",  os.environ['MASTER_ADDR'])
+    print("MASTER_PORT:",  os.environ['MASTER_PORT'])
+    print("RANK:",  os.environ['RANK'])
+    print("WORLD_SIZE:",  os.environ['WORLD_SIZE'])
+    print("LOCAL_RANK:",  os.environ['LOCAL_RANK'])
+
+
     generator = Llama.build(
         ckpt_dir=ckpt_dir,
         tokenizer_path=tokenizer_path,
