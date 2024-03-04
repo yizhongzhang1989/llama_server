@@ -7,12 +7,6 @@ import fire
 
 from llama import Llama, Dialog
 
-# import os  
-# os.environ['MASTER_ADDR'] = 'localhost'  
-# os.environ['MASTER_PORT'] = '12355'  
-# os.environ['RANK'] = '0'  
-# os.environ['WORLD_SIZE'] = '1'  
-
 import sys
 import time
 
@@ -20,18 +14,15 @@ import torch.distributed as dist
 import torch
 import os
 import signal
-  
-rank = int(os.environ['RANK'])
-
 
 # define a print function to print delta string
 stream_mode = True
 
-assistant_esponse = ''
+assistant_response = ''
 
 def print_delta(delta_str, end_flag=False, params=None):
-    global assistant_esponse
-    assistant_esponse += delta_str
+    global assistant_response
+    assistant_response += delta_str
     print(delta_str, end='')
     if end_flag:
         print('')
@@ -64,12 +55,15 @@ def get_rank_pid():
     return pid_list
 
 def read_and_broadcast_input(pid_list):  
+    rank = dist.get_rank()
+
     if rank == 0:  
         userText = input()  
         # For safety, you might want to ensure the text is not too long,  
         # or handle that case appropriately before broadcasting.  
 
-        os.kill(pid_list[1], signal.SIGUSR1)
+        for i in range(1, dist.get_world_size()):
+            os.kill(pid_list[i], signal.SIGUSR1)
 
     else:  
         userText = None  
@@ -145,9 +139,9 @@ def main(
 
         time.sleep(0.1)
 
-        global assistant_esponse
-        dialog.append({"role": "assistant", "content": assistant_esponse})
-        assistant_esponse = ''
+        global assistant_response
+        dialog.append({"role": "assistant", "content": assistant_response})
+        assistant_response = ''
 
 
 if __name__ == "__main__":
