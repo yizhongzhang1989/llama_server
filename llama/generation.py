@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Literal, Optional, Tuple, TypedDict
 
 import torch
+import torch.distributed as dist
 import torch.nn.functional as F
 from fairscale.nn.model_parallel.initialize import (
     get_model_parallel_rank,
@@ -202,15 +203,6 @@ class Llama:
 
             next_token = next_token.reshape(-1)
 
-            # convert token to string (do not support batch size > 1)
-            token = next_token.item()
-            stream_decoder.decode_token(token)
-            if stream_decoder.string_buffer != '' and callback is not None:
-                callback(delta_str=stream_decoder.string_buffer, 
-                        end_flag=False, 
-                        params={"generated_tokens": cur_pos-min_prompt_len+1, 'total_tokens': cur_pos+1})
-                stream_decoder.string_buffer = ''
-
             # only replace token if prompt has already been generated
             next_token = torch.where(
                 input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token
@@ -227,16 +219,25 @@ class Llama:
                 next_token == self.tokenizer.eos_id
             )
             prev_pos = cur_pos
-            if all(eos_reached):
+
+            end_flag = all(eos_reached)
+
+            # convert token to string (do not support batch size > 1)
+            if callback is not None:
+                prev_token_num = len(stream_decoder.token_buffer)
+                token = next_token.item()
+                stream_decoder.decode_token(token)
+                if end_flag:
+                    stream_decoder.flush_token_buffer()
+                delta_tokens = prev_token_num + 1 - len(stream_decoder.token_buffer)
+                if stream_decoder.string_buffer != '':
+                    callback(delta_str=stream_decoder.string_buffer, 
+                            end_flag=end_flag, 
+                            params={"generated_tokens": cur_pos-min_prompt_len+1, 'total_tokens': cur_pos+1, "delta_tokens": delta_tokens})
+                    stream_decoder.string_buffer = ''
+
+            if end_flag:
                 break
-
-        stream_decoder.flush_token_buffer()
-        if callback is not None:
-            callback(delta_str=stream_decoder.string_buffer, 
-                    end_flag=True, 
-                    params={"generated_tokens": cur_pos-min_prompt_len+1, 'total_tokens': cur_pos+1})
-            stream_decoder.string_buffer = ''
-
 
         if logprobs:
             token_logprobs = token_logprobs.tolist()
