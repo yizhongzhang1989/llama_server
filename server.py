@@ -20,6 +20,16 @@ assistant_response = ''
 assistant_response_tokens = 0
 assistant_end_flag = False
 
+def recvall(sock, n):  
+    # Helper function to receive exactly n bytes or return None if EOF is hit  
+    data = b''  
+    while len(data) < n:  
+        packet = sock.recv(n - len(data))  
+        if not packet:  
+            return None  # Connection closed, return what has been received so far  
+        data += packet  
+    return data  
+
 
 def print_delta(delta_str, end_flag=False, params=None):
     global assistant_response
@@ -46,12 +56,20 @@ def send_message(clientsocket, message):
 def handle_client(pid_list, clientsocket, address):  
     print(f"Connection from {address} has been established.")  
     try:  
-        raw_msglen = clientsocket.recv(4)  
+        raw_msglen = recvall(clientsocket, 4)  
         if not raw_msglen:  
-            return  
+            return None  # Connection closed or error  
         msglen = struct.unpack('>I', raw_msglen)[0]  
-        data = clientsocket.recv(msglen).decode()  
-        message_dict = json.loads(data)  
+
+        data = recvall(clientsocket, msglen)  
+        if data is None:  
+            return None  # Connection closed or error during receiving the data  
+        try:  
+            message_dict = json.loads(data.decode())  
+        except json.JSONDecodeError as e:  
+            # Handle JSON decode error, e.g., log the error and/or send an error response to the client  
+            return None  
+
         message = message_dict.get("message", "")  
 
         global client_message
@@ -140,7 +158,7 @@ def wait_for_input(pid_list):
     if rank == 0:
         data = torch.tensor(list(userText_bytes), dtype=torch.uint8)
     else:
-        data = torch.empty(min(1024, length.item()), dtype=torch.uint8)
+        data = torch.empty(max(1024, length.item()), dtype=torch.uint8)
 
     dist.broadcast(data[:length.item()], src=0)
 
