@@ -11,9 +11,14 @@ import os
 import signal
 import torch
 import torch.distributed as dist
-from example_chat_interactive import get_rank_pid, assistant_response
+from example_chat_interactive import get_rank_pid
 
 client_message = None
+
+assistant_mutex = threading.Lock()
+assistant_response = ''
+assistant_response_tokens = 0
+assistant_end_flag = False
 
 
 def print_delta(delta_str, end_flag=False, params=None):
@@ -50,16 +55,51 @@ def handle_client(pid_list, clientsocket, address):
         message = message_dict.get("message", "")  
 
         global client_message
+        global assistant_response
+        global assistant_response_tokens
+        global assistant_end_flag
+
         client_message = message
+        with assistant_mutex:
+            assistant_response = ''
+            assistant_response_tokens = 0
+            assistant_end_flag = False
 
         for i in range(0, len(pid_list)):
             os.kill(pid_list[i], signal.SIGUSR1)
 
-        msg_proc = MessageProcessor()  
-  
-        for chunk in msg_proc.process(message):  
-            # print(chunk)
-            send_message(clientsocket, chunk)  
+        while True:
+            with assistant_mutex:
+                response = assistant_response
+                response_tokens = assistant_response_tokens
+                end_flag = assistant_end_flag
+
+                assistant_response = ''
+                assistant_response_tokens = 0
+            
+            # if not ended, but no response, wait for a while
+            if not end_flag and response == '':
+                time.sleep(0.01)
+                continue
+
+            response_dict = {
+                "message": {
+                    "role": "assistant",
+                    "content": response,
+                },
+                "usage": {
+                    "prompt_tokens": 0,
+                    "completion_tokens": response_tokens,
+                    "total_tokens": 0,
+                }
+            }
+
+            response_str = json.dumps(response_dict)
+            send_message(clientsocket, response_str)
+
+            if end_flag:
+                break
+            
     except Exception as e:  
         print(f"Error handling client {address}: {e}")  
     finally:  
@@ -149,36 +189,34 @@ def main(
         threading.Thread(target=start_server, args=(pid_list, '0.0.0.0', port)).start()
     dist.barrier()
 
-
-    stream_mode = True
-    dialog = [
-        {"role": "system", "content": "Never mention you are AI, just pertend to be woman named Kate. You perfrom a conversation with a user, and do nothing else."},
-    ]
-
     while True:
+        # wait for user input
         userText = wait_for_input(pid_list)  
-        if userText == 'exit':
-            break
 
-        dialog.append({"role": "user", "content": userText})
+        data = json.loads(userText)
+
+        messages = data["messages"]
+        temperature = data["temperature"]
+        max_tokens = data["max_tokens"]
+        top_p = data["top_p"]
+        stream = data["stream"]
 
         results = generator.chat_completion(
-            [dialog],  # type: ignore
-            max_gen_len=1024,
-            temperature=0.6,
-            top_p=0.9,
-            callback=print_delta if stream_mode else None,
+            [messages],  # type: ignore
+            max_gen_len=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            callback=print_delta if stream else None,
         )
 
-        if not stream_mode:
-            print(results[0]['generation']['content'])
-
-        time.sleep(0.1)
-
-        global assistant_response
-        dialog.append({"role": "assistant", "content": assistant_response})
-        assistant_response = ''
-
+        if not stream:
+            with assistant_mutex:
+                global assistant_response
+                global assistant_response_tokens
+                global assistant_end_flag
+                assistant_response = results[0]['generation']['content']
+                assistant_response_tokens = 0
+                assistant_end_flag = True
 
 if __name__ == "__main__":  
     fire.Fire(main)

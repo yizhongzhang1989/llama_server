@@ -1,7 +1,8 @@
 import socket  
 import struct  
 import json  
-  
+
+
 def recvall(sock, n):  
     data = bytearray()  
     while len(data) < n:  
@@ -11,7 +12,7 @@ def recvall(sock, n):
         data.extend(packet)  
     return data  
   
-class Communication:  
+class LlamaServerAPI:  
     def __init__(self, host, port):  
         self.host = host  
         self.port = port  
@@ -42,17 +43,93 @@ class Communication:
   
         self.sock.close()  
   
+    def chat_completion(
+        self, 
+        messages, 
+        temperature=0.6, 
+        max_tokens=1024,
+        top_p=0.9, 
+        stream=False
+    ):
+        print(messages)
+
+        # prepare data to send to server
+        data = {
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "top_p": top_p,
+            "stream": stream
+        }
+        data_str = json.dumps(data)
+
+        # send the data to server
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  
+        self.sock.connect((self.host, self.port))  
+        self._send_data(data_str)  
+
+        response = None
+
+        if stream:
+            while True:  
+                raw_msglen = recvall(self.sock, 4)  
+                if not raw_msglen:  
+                    break  
+                msglen = struct.unpack('>I', raw_msglen)[0]  
+                data = recvall(self.sock, msglen).decode()  
+                chunk_dict = json.loads(data)  
+
+                yield chunk_dict["delta"]  
+        else:
+            raw_msglen = recvall(self.sock, 4)  
+            msglen = struct.unpack('>I', raw_msglen)[0]  
+            data = recvall(self.sock, msglen).decode()  
+            response = json.loads(data)  
+  
+        self.sock.close()  
+
+        return response
+
+
 def main():  
     host = 'msraig-ubuntu-2'  
     port = 65432  
-    client = Communication(host, port)  
-  
+    llama = LlamaServerAPI(
+        host=host, 
+        port=port
+    )  
+
+    stream_mode = False
+    dialog = [
+        {"role": "system", "content": "Never mention you are AI, just pertend to be woman named Kate. You perfrom a conversation with a user, and do nothing else."},
+    ]
+
     input_text = input("Enter a message (or type 'exit' to quit): ")  
     while input_text.lower() != 'exit':  
-        for chunk in client.get_response_stream(input_text):  
-            print(chunk, end=' ', flush=True)              
-        print()  # Move to the next line after the message is fully received  
+        dialog.append({"role": "user", "content": input_text})
+
+        try:
+            response = llama.chat_completion(
+                messages=dialog,                
+                temperature=0.6,
+                max_tokens=1024,
+                top_p=0.9,
+                stream=stream_mode
+            )
+
+            if stream_mode:
+                for chunk in llama.get_response_stream(input_text):  
+                    print(chunk, end=' ', flush=True)              
+            else:
+                print(response['message']['content'])
+            
+            print()  # Move to the next line after the message is fully received  
+
+        except Exception as e:
+            print(f"Error: {e}")
+
         input_text = input("Enter a message (or type 'exit' to quit): ")  
+
     print("Goodbye!")  
   
 if __name__ == "__main__":  
