@@ -129,10 +129,57 @@ class LlamaServerAPI(object):
 
         return response
 
+
+class LlamaServer(object):
+    def __init__(self, host, port):  
+        self.host = host  
+        self.port = port  
+        self.sock = None  
+
+    def _send_data(self, message):  
+        msg_dict = {"function": "chat_completion", "message": message}  
+        msg = json.dumps(msg_dict).encode()  
+
+        print(msg)
+
+        msg = struct.pack('>I', len(msg)) + msg  
+        self.sock.sendall(msg)  
+
+    def chat_completion(self, messages, temperature=0.6, max_tokens=1024, top_p=0.9, stream=False):
+        # prepare data to send to server
+        data = {
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "top_p": top_p,
+            "stream": stream
+        }
+        data_str = json.dumps(data)
+
+        # send the data to server
+        try:
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  
+            self.sock.connect((self.host, self.port))  
+            self._send_data(data_str)  
+
+            raw_msglen = recvall(self.sock, 4)  
+            msglen = struct.unpack('>I', raw_msglen)[0]  
+            data = recvall(self.sock, msglen).decode()  
+            response = json.loads(data)  
+
+            self.sock.close()
+
+        except Exception as e:
+            raise e
+
+        # print(response)
+        return response
+
+
 def main():  
     host = 'msraig-ubuntu-2'  
-    port = 65432  
-    llama_client = LlamaServerAPI(
+    port = 65432
+    llama_client = LlamaServer(
         host=host, 
         port=port
     )  
@@ -147,7 +194,7 @@ def main():
         dialog.append({"role": "user", "content": input_text})
 
         try:
-            response = llama_client.tmp(
+            response = llama_client.chat_completion(
                 messages=dialog,                
                 temperature=0.6,
                 max_tokens=1024,
@@ -155,16 +202,37 @@ def main():
                 stream=stream_mode
             )
 
-            if stream_mode:
-                for chunk in llama_client.get_response_stream(input_text):  
-                    print(chunk, end=' ', flush=True)              
-            else:
-                print(response['message']['content'])
-            
-            print()  # Move to the next line after the message is fully received  
+            print(response['message']['content'])
+
+            dialog.append(response['message'])
+
 
         except Exception as e:
             print(f"Error: {e}")
+
+            # remove the last message from the dialog
+            dialog.pop()
+
+
+        # try:
+        #     response = llama_client.tmp(
+        #         messages=dialog,                
+        #         temperature=0.6,
+        #         max_tokens=1024,
+        #         top_p=0.9,
+        #         stream=stream_mode
+        #     )
+
+        #     if stream_mode:
+        #         for chunk in llama_client.get_response_stream(input_text):  
+        #             print(chunk, end=' ', flush=True)              
+        #     else:
+        #         print(response['message']['content'])
+            
+        #     print()  # Move to the next line after the message is fully received  
+
+        # except Exception as e:
+        #     print(f"Error: {e}")
 
         input_text = input("Enter a message (or type 'exit' to quit): ")  
 
