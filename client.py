@@ -1,16 +1,59 @@
-import requests
+import socket  
+import struct  
+import json  
+  
+def recvall(sock, n):  
+    data = bytearray()  
+    while len(data) < n:  
+        packet = sock.recv(n - len(data))  
+        if not packet:  
+            return None  
+        data.extend(packet)  
+    return data  
+  
+class Communication:  
+    def __init__(self, host, port):  
+        self.host = host  
+        self.port = port  
+        self.sock = None  
+  
+    def _send_data(self, message):  
+        msg_dict = {"usage": "to_upper", "message": message}  
+        msg = json.dumps(msg_dict).encode()  
+        msg = struct.pack('>I', len(msg)) + msg  
+        self.sock.sendall(msg)  
+  
+    def get_response_stream(self, input_text):  
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)  
+        self.sock.connect((self.host, self.port))  
+        self._send_data(input_text)  
+  
+        while True:  
+            raw_msglen = recvall(self.sock, 4)  
+            if not raw_msglen:  
+                break  
+            msglen = struct.unpack('>I', raw_msglen)[0]  
+            data = recvall(self.sock, msglen).decode()  
+            chunk_dict = json.loads(data)  
 
-def send_request_to_server(input_text):
-    # The URL of the server's endpoint
-    url = "http://msraig-ubuntu-2:5000/infer"  # Replace with your actual server address and port
-    # Send a POST request with JSON data
-    response = requests.post(url, json={'text': input_text})
-    # Get the response data
-    if response.status_code == 200:
-        return response.json()['response']
-    else:
-        return None
+            # print(chunk_dict)
 
-# Example usage
-response = send_request_to_server("Hello, world!")
-print(response)
+            yield chunk_dict["delta"]  
+  
+        self.sock.close()  
+  
+def main():  
+    host = 'msraig-ubuntu-2'  
+    port = 65432  
+    client = Communication(host, port)  
+  
+    input_text = input("Enter a message (or type 'exit' to quit): ")  
+    while input_text.lower() != 'exit':  
+        for chunk in client.get_response_stream(input_text):  
+            print(chunk, end=' ', flush=True)              
+        print()  # Move to the next line after the message is fully received  
+        input_text = input("Enter a message (or type 'exit' to quit): ")  
+    print("Goodbye!")  
+  
+if __name__ == "__main__":  
+    main()  
