@@ -30,23 +30,17 @@ def recvall(sock, n):
         data += packet  
     return data  
 
-
-def print_delta(delta_str, end_flag=False, params=None):
+def get_delta(delta_str, end_flag=False, params=None):
+    global assistant_mutex
     global assistant_response
-    assistant_response += delta_str
-    print(delta_str, end='')
-    if end_flag:
-        print('')
-        print('total_tokens: ', params['total_tokens'])
-    sys.stdout.flush()        
+    global assistant_response_tokens
+    global assistant_end_flag
 
-class MessageProcessor:  
-    def process(self, message):  
-        words = message.upper().split()  
-        for word in words:  
-            time.sleep(0.1)  # Introduce a 100ms delay here, in the processing  
-            chunk = json.dumps({"usage": "to_upper", "delta": word})  
-            yield chunk  
+    with assistant_mutex:
+        assistant_response += delta_str
+
+        if end_flag:
+            assistant_end_flag = True
   
 def send_message(clientsocket, message):  
     encoded_message = message.encode()  
@@ -71,6 +65,10 @@ def handle_client(pid_list, clientsocket, address):
             return None  
 
         message = message_dict.get("message", "")  
+
+        message_dict = json.loads(message)
+        stream = message_dict.get("stream", False)
+
 
         global client_message
         global assistant_response
@@ -100,17 +98,31 @@ def handle_client(pid_list, clientsocket, address):
                 time.sleep(0.01)
                 continue
 
-            response_dict = {
-                "message": {
-                    "role": "assistant",
-                    "content": response,
-                },
-                "usage": {
-                    "prompt_tokens": 0,
-                    "completion_tokens": response_tokens,
-                    "total_tokens": 0,
+            if stream:
+                response_dict = {
+                    "delta": {
+                        "role": "assistant",
+                        "content": response,
+                    },
+                    "end_flag": end_flag,
+                    "usage": {
+                        "prompt_tokens": 0,
+                        "completion_tokens": response_tokens,
+                        "total_tokens": 0,
+                    }
                 }
-            }
+            else:
+                response_dict = {
+                    "message": {
+                        "role": "assistant",
+                        "content": response,
+                    },
+                    "usage": {
+                        "prompt_tokens": 0,
+                        "completion_tokens": response_tokens,
+                        "total_tokens": 0,
+                    }
+                }
 
             response_str = json.dumps(response_dict)
             send_message(clientsocket, response_str)
@@ -122,7 +134,7 @@ def handle_client(pid_list, clientsocket, address):
         print(f"Error handling client {address}: {e}")  
     finally:  
         clientsocket.close()  
-        # print(f"Connection with {address} closed.")  
+        print(f"Connection with {address} closed.")  
   
 def start_server(pid_list, host='0.0.0.0', port=65432):  
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as serversocket:  
@@ -220,11 +232,11 @@ def main(
         stream = data["stream"]
 
         results = generator.chat_completion(
-            [messages],  # type: ignore
+            [messages],
             max_gen_len=max_tokens,
             temperature=temperature,
             top_p=top_p,
-            callback=print_delta if stream else None,
+            callback=get_delta if stream else None,
         )
 
         if not stream:
