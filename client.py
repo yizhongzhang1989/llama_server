@@ -2,15 +2,6 @@ import socket
 import struct  
 import json  
 
-
-def recvall(sock, n):  
-    data = bytearray()  
-    while len(data) < n:  
-        packet = sock.recv(n - len(data))  
-        if not packet:  
-            return None  
-        data.extend(packet)  
-    return data  
   
 
 class LlamaClient(object):
@@ -48,9 +39,9 @@ class LlamaClient(object):
             self.sock.connect((self.host, self.port))  
             self._send_data(data_str)  
 
-            raw_msglen = recvall(self.sock, 4)  
+            raw_msglen = self.recvall(self.sock, 4)  
             msglen = struct.unpack('>I', raw_msglen)[0]  
-            data = recvall(self.sock, msglen).decode()  
+            data = self.recvall(self.sock, msglen).decode()  
             response = json.loads(data)  
 
             self.sock.close()
@@ -79,9 +70,9 @@ class LlamaClient(object):
             self._send_data(data_str)  
 
             while True:
-                raw_msglen = recvall(self.sock, 4)  
+                raw_msglen = self.recvall(self.sock, 4)  
                 msglen = struct.unpack('>I', raw_msglen)[0]  
-                data = recvall(self.sock, msglen).decode()  
+                data = self.recvall(self.sock, msglen).decode()  
                 response = json.loads(data)  
 
                 yield response
@@ -96,6 +87,16 @@ class LlamaClient(object):
 
         # print(response)
         return response
+
+    def recvall(self, sock, n):  
+        data = bytearray()  
+        while len(data) < n:  
+            packet = sock.recv(n - len(data))  
+            if not packet:  
+                return None  
+            data.extend(packet)  
+        return data  
+
 
 def main():  
     host = 'msraig-ubuntu-2'  
