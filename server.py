@@ -13,6 +13,17 @@ import torch
 import torch.distributed as dist
 from example_chat_interactive import get_rank_pid
 
+# # set environment variables for debugging
+# os.environ['MASTER_ADDR'] = 'localhost'  
+# os.environ['MASTER_PORT'] = '12355'  
+# os.environ['RANK'] = '0'  
+# os.environ['WORLD_SIZE'] = '1'  
+# os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+
+
+server_busy_lock = threading.Lock()
+server_busy = False
+
 client_message = None
 
 assistant_mutex = threading.Lock()
@@ -150,38 +161,41 @@ def signal_handler(signum, frame):
     pass
 
 def wait_for_input(pid_list):  
-    signal.signal(signal.SIGUSR1, signal_handler)
-    signal.pause()
+    try:
+        signal.signal(signal.SIGUSR1, signal_handler)
+        signal.pause()
 
-    rank = dist.get_rank()
+        rank = dist.get_rank()
 
-    # boardcase data length
-    if rank == 0:
-        userText = client_message
-        userText_bytes = userText.encode()  
-        length = torch.tensor([len(userText_bytes)], dtype=torch.long)
-    else:
-        userText = None
-        length = torch.tensor([0], dtype=torch.long)  
+        # boardcase data length
+        if rank == 0:
+            userText = client_message
+            userText_bytes = userText.encode()  
+            length = torch.tensor([len(userText_bytes)], dtype=torch.long)
+        else:
+            userText = None
+            length = torch.tensor([0], dtype=torch.long)  
 
-    dist.broadcast(length, src=0)
+        dist.broadcast(length, src=0)
 
-    # broadcast data
-    if rank == 0:
-        data = torch.tensor(list(userText_bytes), dtype=torch.uint8)
-    else:
-        data = torch.empty(max(1024, length.item()), dtype=torch.uint8)
+        # broadcast data
+        if rank == 0:
+            data = torch.tensor(list(userText_bytes), dtype=torch.uint8)
+        else:
+            data = torch.empty(max(1024, length.item()), dtype=torch.uint8)
 
-    dist.broadcast(data[:length.item()], src=0)
+        dist.broadcast(data[:length.item()], src=0)
 
-    if rank != 0:  
-        userText = bytes(data[:length.item()]).decode()  
+        if rank != 0:  
+            userText = bytes(data[:length.item()]).decode()  
 
-    # print userText with rank
-    print(f"Rank {rank} received userText: {userText}")
+        # print userText with rank
+        print(f"Rank {rank} received userText: {userText}")
 
-    return userText  
+        return userText  
 
+    except Exception as e:
+        raise e
 
 def main(
     ckpt_dir: str,
@@ -220,33 +234,36 @@ def main(
     dist.barrier()
 
     while True:
-        # wait for user input
-        userText = wait_for_input(pid_list)  
+        try:
+            # wait for user input
+            userText = wait_for_input(pid_list)  
 
-        data = json.loads(userText)
+            data = json.loads(userText)
 
-        messages = data["messages"]
-        temperature = data["temperature"]
-        max_tokens = data["max_tokens"]
-        top_p = data["top_p"]
-        stream = data["stream"]
+            messages = data["messages"]
+            temperature = data["temperature"]
+            max_tokens = data["max_tokens"]
+            top_p = data["top_p"]
+            stream = data["stream"]
 
-        results = generator.chat_completion(
-            [messages],
-            max_gen_len=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            callback=get_delta if stream else None,
-        )
+            results = generator.chat_completion(
+                [messages],
+                max_gen_len=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                callback=get_delta if stream else None,
+            )
 
-        if not stream:
-            with assistant_mutex:
-                global assistant_response
-                global assistant_response_tokens
-                global assistant_end_flag
-                assistant_response = results[0]['generation']['content']
-                assistant_response_tokens = 0
-                assistant_end_flag = True
+            if not stream:
+                with assistant_mutex:
+                    global assistant_response
+                    global assistant_response_tokens
+                    global assistant_end_flag
+                    assistant_response = results[0]['generation']['content']
+                    assistant_response_tokens = 0
+                    assistant_end_flag = True
+        except Exception as e:
+            print(f"Error in main: {e}")
 
 if __name__ == "__main__":  
     fire.Fire(main)

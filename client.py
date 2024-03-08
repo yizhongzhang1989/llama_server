@@ -98,7 +98,33 @@ class LlamaClient(object):
         return data  
 
 
-def main():  
+
+def main():
+    host = 'msraig-ubuntu-2'  
+    port = 65432
+    llama_client = LlamaClient(
+        host=host, 
+        port=port
+    )  
+
+    dialog = [
+        {"role": "user", "content": "hi 1"},
+        {"role": "user", "content": "hi 2"},
+    ]
+
+    response = llama_client.chat_completion(
+        messages=dialog,                
+        temperature=0.6,
+        max_tokens=1024,
+        top_p=0.9,
+        stream=False
+    )
+    print(response['message']['content'])
+    
+
+
+
+def main_bak():  
     host = 'msraig-ubuntu-2'  
     port = 65432
     llama_client = LlamaClient(

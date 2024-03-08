@@ -348,6 +348,8 @@ class Llama:
         prompt_tokens = []
         unsafe_requests = []
         for dialog in dialogs:
+            dialog = self.format_dialog(dialog)
+
             unsafe_requests.append(
                 any([tag in msg["content"] for tag in SPECIAL_TAGS for msg in dialog])
             )
@@ -539,7 +541,51 @@ class Llama:
             print("Generated tokens:", params["generated_tokens"])
             print("Total tokens:", params["total_tokens"])
 
+    @staticmethod
+    def format_dialog(dialog: Dialog) -> Dialog:  
+        valid_roles = {'system', 'user', 'assistant'}  
+        
+        # Filter valid messages and keep only 'role' and 'content' keys  
+        filtered_dialog = [  
+            {'role': msg['role'], 'content': msg['content']}   
+            for msg in dialog   
+            if isinstance(msg, dict)   
+            and 'role' in msg and isinstance(msg['role'], str)   
+            and 'content' in msg and isinstance(msg['content'], str)   
+            and msg['role'] in valid_roles  
+            and msg['content']
+        ]  
 
+         # Check if there are any user messages  
+        has_user_message = any(msg for msg in filtered_dialog if msg['role'] == 'user')  
+
+        # Separate system messages and other messages  
+        system_messages = [msg for msg in filtered_dialog if msg['role'] == 'system']  
+        other_messages = [msg for msg in filtered_dialog if msg['role'] != 'system']  
+        
+        # Concatenate system messages  
+        system_content = ' '.join(msg['content'] for msg in system_messages)  
+        formatted_system_message = [{'role': 'system', 'content': system_content}]  
+        
+        # Correct the sequence to start with a 'user' role after 'system'  
+        interleaved_messages = []  
+        last_role = 'assistant'  # Set initial last role as 'assistant' to ensure the first message is 'user'  
+        
+        for msg in other_messages:  
+            # Insert an empty message to alternate between user and assistant, starting with 'user'  
+            if msg['role'] == last_role:  
+                opposite_role = 'assistant' if last_role == 'user' else 'user'  
+                interleaved_messages.append({'role': opposite_role, 'content': ''})  
+                last_role = opposite_role  # Update last_role to inserted opposite_role  
+            
+            interleaved_messages.append(msg)  
+            last_role = msg['role']  
+        
+        # Ensure last message is from user  
+        if not has_user_message or (interleaved_messages and interleaved_messages[-1]['role'] != 'user'):  
+            interleaved_messages.append({'role': 'user', 'content': ''})  
+
+        return formatted_system_message + interleaved_messages  
 
 def sample_top_p(probs, p):
     """
