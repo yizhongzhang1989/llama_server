@@ -99,7 +99,7 @@ class LlamaClient(object):
 
 
 
-def main():
+def main_bak():
     host = 'msraig-ubuntu-2'  
     port = 65432
     llama_client = LlamaClient(
@@ -124,7 +124,7 @@ def main():
 
 
 
-def main_bak():  
+def main():  
     host = 'msraig-ubuntu-2'  
     port = 65432
     llama_client = LlamaClient(

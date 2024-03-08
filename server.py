@@ -57,8 +57,27 @@ def send_message(clientsocket, message):
     encoded_message = message.encode()  
     message_length = len(encoded_message)  
     clientsocket.sendall(struct.pack('>I', message_length) + encoded_message)  
-  
+
+def send_error(clientsocket, message):
+    # if message is string
+    if isinstance(message, str):
+        response_dict = {
+            "error": {
+                "message": message,        
+            }
+        }
+    else:
+        response_dict = {
+            "error": message,
+        }        
+
+    response_str = json.dumps(response_dict)
+    send_message(clientsocket, response_str)
+
 def handle_client(pid_list, clientsocket, address):  
+    # get thread id
+    print(f"Thread {threading.get_ident()} started.")
+    
     print(f"Connection from {address} has been established.")  
     try:  
         raw_msglen = recvall(clientsocket, 4)  
@@ -80,6 +99,20 @@ def handle_client(pid_list, clientsocket, address):
         message_dict = json.loads(message)
         stream = message_dict.get("stream", False)
 
+        # check whether the server is busy
+        global server_busy_lock
+        global server_busy
+        abort_flag = False
+        with server_busy_lock:            
+            if server_busy:
+                abort_flag = True
+            server_busy = True
+
+        # if server is busy, send error message and return
+        if abort_flag:
+            print("Server is busy. Please try again later.")
+            send_error(clientsocket, "Server is busy. Please try again later.")
+            return
 
         global client_message
         global assistant_response
@@ -264,6 +297,12 @@ def main(
                     assistant_end_flag = True
         except Exception as e:
             print(f"Error in main: {e}")
+        finally:            
+            global server_busy_lock
+            global server_busy
+            with server_busy_lock:
+                server_busy = False
+            print("Server idle.")
 
 if __name__ == "__main__":  
     fire.Fire(main)
